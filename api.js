@@ -27,10 +27,11 @@ function setStatus(message, type = "ready") {
 }
 
 /**
- * Reusable fetch wrapper that checks response.ok and throws descriptive errors.
+ * Reusable fetch wrapper that checks response.ok, throws descriptive errors,
+ * and returns the parsed payload alongside HTTP status code.
  * @param {string} url - Target URL.
  * @param {RequestInit} [options={}] - Fetch configuration options.
- * @returns {Promise<any>} Parsed JSON response.
+ * @returns {Promise<{data: any, status: number}>} Payload and HTTP status.
  */
 async function request(url, options = {}) {
   const response = await fetch(url, options);
@@ -41,10 +42,11 @@ async function request(url, options = {}) {
 
   // Handle empty responses (such as 204 No Content)
   if (response.status === 204) {
-    return null;
+    return { data: null, status: 204 };
   }
 
-  return await response.json();
+  const data = await response.json();
+  return { data, status: response.status };
 }
 
 /**
@@ -93,7 +95,7 @@ async function loadNotes() {
   setStatus("Loading notes...", "loading");
 
   try {
-    const data = await request(`${API_URL}?_limit=10`);
+    const { data } = await request(`${API_URL}?_limit=10`);
     notes = data;
     renderNotes();
     setStatus(`Loaded ${notes.length} notes from the server.`, "success");
@@ -105,5 +107,61 @@ async function loadNotes() {
   }
 }
 
+/**
+ * Creates a new note via POST with client-side validation.
+ * @param {Event} event - Submit event.
+ */
+async function createNote(event) {
+  event.preventDefault();
+
+  const title = titleInput.value.trim();
+  const body = bodyInput.value.trim();
+
+  // Validation: Title required and max 100 characters
+  if (!title) {
+    setStatus("Validation error: Title is required.", "error");
+    titleInput.focus();
+    return;
+  }
+
+  if (title.length > 100) {
+    setStatus("Validation error: Title must be 100 characters or fewer.", "error");
+    titleInput.focus();
+    return;
+  }
+
+  submitBtn.disabled = true;
+  setStatus("Creating note on server...", "loading");
+
+  try {
+    const { data, status } = await request(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json; charset=UTF-8",
+      },
+      body: JSON.stringify({
+        title,
+        body,
+        userId: 1,
+      }),
+    });
+
+    // Prepend newly created note to top of the list
+    notes.unshift(data);
+    renderNotes();
+
+    // Success feedback showing status code and new id
+    setStatus(`Note created (status ${status}, id ${data.id}).`, "success");
+
+    // Clear form inputs
+    noteForm.reset();
+  } catch (error) {
+    setStatus(`Failed to create note: ${error.message}`, "error");
+  } finally {
+    submitBtn.disabled = false;
+  }
+}
+
 // Event Listeners
 loadBtn.addEventListener("click", loadNotes);
+noteForm.addEventListener("submit", createNote);
