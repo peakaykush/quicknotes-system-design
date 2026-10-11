@@ -40,13 +40,46 @@ async function request(url, options = {}) {
     throw new Error(`Server returned HTTP ${response.status}: ${response.statusText}`);
   }
 
-  // Handle empty responses (such as 204 No Content)
+  // Handle empty responses (such as 204 No Content or empty 200 DELETE body)
   if (response.status === 204) {
     return { data: null, status: 204 };
   }
 
-  const data = await response.json();
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
   return { data, status: response.status };
+}
+
+/**
+ * Deletes a note by its ID via DELETE request and updates client state.
+ *
+ * NOTE ON MOCK API BEHAVIOR:
+ * JSONPlaceholder is a mock REST API service. While it acknowledges HTTP DELETE
+ * requests with successful status codes (200 OK), it does not actually persist deletions
+ * on its backend database. To maintain a realistic, responsive user experience, we simulate
+ * successful deletion by removing the item from client-side memory and re-rendering the DOM.
+ *
+ * @param {number|string} id - The note's unique identifier.
+ * @param {HTMLButtonElement} btn - The clicked delete button.
+ */
+async function deleteNote(id, btn) {
+  btn.disabled = true;
+  setStatus(`Deleting note ${id}...`, "loading");
+
+  try {
+    const { status } = await request(`${API_URL}/${id}`, {
+      method: "DELETE",
+    });
+
+    // Remove note from local array
+    notes = notes.filter((note) => note.id !== id);
+    renderNotes();
+
+    setStatus(`Note ${id} deleted (status ${status}).`, "success");
+  } catch (error) {
+    setStatus(`Failed to delete note ${id}: ${error.message}`, "error");
+    btn.disabled = false;
+  }
 }
 
 /**
@@ -81,7 +114,16 @@ function renderNotes() {
 
     contentDiv.appendChild(titleEl);
     contentDiv.appendChild(bodyEl);
+
+    // Delete button
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "delete-btn";
+    deleteBtn.type = "button";
+    deleteBtn.textContent = "Delete";
+    deleteBtn.addEventListener("click", () => deleteNote(note.id, deleteBtn));
+
     li.appendChild(contentDiv);
+    li.appendChild(deleteBtn);
 
     notesList.appendChild(li);
   });
